@@ -322,7 +322,22 @@ code{
         <div class="state-ico">📍</div>
         <div class="state-ttl" id="mhTitle">Finding your location…</div>
         <div class="state-sub" id="mhSub">Allow location access when your browser asks.</div>
-        <button class="btn-p" id="btnLoc" style="display:none" onclick="getLocation()">Allow Location</button>
+        <button class="btn-p" id="btnLoc" style="display:none" onclick="getLocation()">Try Again</button>
+        <!-- manual location search (shown when geolocation fails or is unavailable) -->
+        <div id="manualLocWrap" style="display:none;width:100%;max-width:340px;margin-top:4px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;text-align:center">Or enter your suburb / city:</div>
+          <div style="display:flex;gap:8px">
+            <input id="locInput" type="text" placeholder="e.g. Ponsonby, Auckland"
+              style="flex:1;padding:9px 13px;border:1.5px solid var(--border);border-radius:9px;
+                     font-size:13px;font-family:inherit;outline:none;transition:border-color .15s"
+              onkeydown="if(event.key==='Enter')geocodeSearch()"
+              onfocus="this.style.borderColor='var(--green)'"
+              onblur="this.style.borderColor='var(--border)'"/>
+            <button class="btn-p" style="padding:9px 16px;margin-top:0" onclick="geocodeSearch()">Go</button>
+          </div>
+          <div id="locSuggestions" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px;justify-content:center"></div>
+          <div id="locErr2" style="color:var(--red);font-size:12px;margin-top:6px;display:none"></div>
+        </div>
       </div>
 
       <!-- setup overlay -->
@@ -648,28 +663,83 @@ function commit(stations){
 }
 
 /* ══ GEOLOCATION ═══════════════════════════════════════════════ */
+const NZ_SHORTCUTS = ['Auckland','Wellington','Christchurch','Hamilton','Tauranga','Dunedin','Napier'];
+
 function getLocation(){
   setStatus('spin-dot','Getting location…');
   $('mhTitle').textContent='Finding your location…';
   $('mhSub').textContent='Please allow location access when prompted.';
   $('btnLoc').style.display='none';
-  if(!navigator.geolocation){locErr('Geolocation not supported.');return;}
+  $('manualLocWrap').style.display='none';
+
+  // Geolocation requires HTTPS — detect file:// early
+  if(location.protocol==='file:'){
+    locErr('Open over HTTPS (GitHub Pages) for auto-location, or enter your suburb below.');
+    return;
+  }
+  if(!navigator.geolocation){locErr('Geolocation not supported by your browser.');return;}
   navigator.geolocation.getCurrentPosition(
     pos=>{
-      S.loc={lat:pos.coords.latitude,lng:pos.coords.longitude};
-      initMap(S.loc.lat,S.loc.lng);
-      $('sideState').innerHTML=`<div class="state-ico"><span class="spin">⟳</span></div><div class="state-ttl">Loading prices…</div>`;
-      load();
+      useCoords(pos.coords.latitude, pos.coords.longitude, '📍 Your location');
     },
     e=>locErr(e.message),
     {enableHighAccuracy:true,timeout:12000,maximumAge:6e4}
   );
 }
+
+function useCoords(lat,lng,label){
+  S.loc={lat,lng};
+  initMap(lat,lng);
+  $('sideState').innerHTML=`<div class="state-ico"><span class="spin">⟳</span></div><div class="state-ttl">Loading prices…</div><div class="state-sub">${esc(label)}</div>`;
+  load();
+}
+
 function locErr(msg){
-  $('mhTitle').textContent='Location Access Needed';
+  $('mhTitle').textContent='Enter your location';
   $('mhSub').textContent=msg;
   $('btnLoc').style.display='';
+  $('manualLocWrap').style.display='';
   setStatus('err','No location');
+  // render suburb shortcuts
+  const wrap=$('locSuggestions');
+  wrap.innerHTML='';
+  NZ_SHORTCUTS.forEach(name=>{
+    const b=document.createElement('button');
+    b.textContent=name;
+    b.style.cssText='padding:4px 11px;border-radius:14px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--slate);transition:all .15s';
+    b.onmouseenter=()=>{b.style.borderColor='var(--green)';b.style.color='var(--green)'};
+    b.onmouseleave=()=>{b.style.borderColor='var(--border)';b.style.color='var(--slate)'};
+    b.onclick=()=>{ $('locInput').value=name+', New Zealand'; geocodeSearch(); };
+    wrap.appendChild(b);
+  });
+}
+
+async function geocodeSearch(){
+  const q=($('locInput').value||'').trim();
+  if(!q)return;
+  $('locErr2').style.display='none';
+  $('mhTitle').textContent='Searching…';
+  setStatus('spin-dot','Searching…');
+  try{
+    const url=`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q+' New Zealand')}&countrycodes=nz&format=json&limit=1`;
+    const r=await fetch(url,{headers:{'Accept-Language':'en','User-Agent':'NZPetrolFinder/1.0'}});
+    const data=await r.json();
+    if(!data.length){
+      $('mhTitle').textContent='Enter your location';
+      $('locErr2').textContent='Location not found — try a suburb or city name.';
+      $('locErr2').style.display='';
+      setStatus('err','Not found');
+      return;
+    }
+    const {lat,lon,display_name}=data[0];
+    const label=display_name.split(',').slice(0,2).join(',');
+    useCoords(parseFloat(lat),parseFloat(lon),label);
+  }catch(e){
+    $('mhTitle').textContent='Enter your location';
+    $('locErr2').textContent='Search failed: '+e.message;
+    $('locErr2').style.display='';
+    setStatus('err','Error');
+  }
 }
 
 /* ══ FUEL TABS ═════════════════════════════════════════════════ */
@@ -724,7 +794,12 @@ $('errX').onclick=hideErr;
 
 /* ══ BOOT ══════════════════════════════════════════════════════ */
 buildTabs();
-getLocation();
+// On file:// skip the waiting animation and go straight to manual input
+if(location.protocol==='file:'){
+  locErr('Auto-location requires HTTPS. Enter your suburb or city below:');
+} else {
+  getLocation();
+}
 </script>
 </body>
 </html>
