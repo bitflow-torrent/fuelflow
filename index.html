@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NZ Petrol Finder – Cheapest Fuel Near You</title>
+<meta name="description" content="Find the cheapest petrol near you in New Zealand. Real-time prices powered by Gaspy."/>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛽</text></svg>"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"/>
+<style>
+/* ══ TOKENS ════════════════════════════════════════════════════ */
+:root {
+  --green:#16a34a; --green-d:#15803d; --green-m:#22c55e; --green-l:#dcfce7;
+  --amber:#f59e0b; --red:#ef4444;
+  --navy:#0f172a;  --navy-m:#1e293b; --slate:#334155;
+  --muted:#94a3b8; --border:#e2e8f0; --surface:#fff; --bg:#f8fafc; --text:#0f172a;
+  --r:14px; --r-sm:8px; --r-lg:20px;
+  --sh: 0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
+  --sh-md:0 4px 6px -1px rgba(0,0,0,.08),0 2px 4px rgba(0,0,0,.04);
+  --sh-lg:0 10px 25px -3px rgba(0,0,0,.1),0 4px 6px rgba(0,0,0,.05);
+  --sh-xl:0 20px 40px -8px rgba(0,0,0,.16);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+
+/* ══ LAYOUT ════════════════════════════════════════════════════ */
+#app{display:flex;flex-direction:column;height:100vh}
+
+/* ══ HEADER ════════════════════════════════════════════════════ */
+.hdr{
+  background:linear-gradient(135deg,var(--navy) 0%,var(--navy-m) 100%);
+  height:62px;padding:0 20px;display:flex;align-items:center;gap:14px;
+  box-shadow:var(--sh-lg);z-index:100;flex-shrink:0
+}
+.hdr-logo{
+  width:38px;height:38px;border-radius:10px;
+  background:linear-gradient(135deg,var(--green),var(--green-m));
+  display:flex;align-items:center;justify-content:center;font-size:20px;
+  box-shadow:0 2px 8px rgba(22,163,74,.4);flex-shrink:0
+}
+.hdr-brand{display:flex;flex-direction:column}
+.hdr-title{font-size:17px;font-weight:800;color:#fff;letter-spacing:-.3px;line-height:1.2}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.hdr-space{flex:1}
+.hdr-pill{
+  display:flex;align-items:center;gap:7px;
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);
+  border-radius:20px;padding:5px 12px;font-size:12px;color:rgba(255,255,255,.7)
+}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:background .3s;flex-shrink:0}
+.dot.live{background:var(--green-m);box-shadow:0 0 6px rgba(34,197,94,.6)}
+.dot.err{background:var(--red)}
+.dot.spin-dot{background:var(--amber);animation:pulse 1s infinite}
+.btn-refresh{
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);
+  color:#fff;padding:6px 14px;border-radius:20px;cursor:pointer;
+  font-size:12px;font-weight:600;font-family:inherit;
+  display:flex;align-items:center;gap:5px;transition:background .15s;white-space:nowrap
+}
+.btn-refresh:hover{background:rgba(255,255,255,.18)}
+.btn-refresh:disabled{opacity:.4;cursor:not-allowed}
+
+/* ══ CONTROLS ══════════════════════════════════════════════════ */
+.ctrl{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:9px 18px;display:flex;align-items:center;gap:10px;
+  flex-wrap:wrap;flex-shrink:0;z-index:10
+}
+.fuel-tabs{display:flex;gap:5px;flex-wrap:wrap}
+.ftab{
+  padding:5px 14px;border-radius:20px;border:1.5px solid var(--border);
+  background:var(--surface);color:var(--slate);font-size:12px;font-weight:600;
+  font-family:inherit;cursor:pointer;transition:all .15s;white-space:nowrap
+}
+.ftab:hover{border-color:var(--green);color:var(--green)}
+.ftab.on{background:var(--green);border-color:var(--green);color:#fff;
+  box-shadow:0 2px 8px rgba(22,163,74,.3)}
+.ctrl-r{margin-left:auto;display:flex;align-items:center;gap:12px}
+.rad-wrap{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;font-weight:500}
+.rad-wrap input[type=range]{
+  -webkit-appearance:none;width:90px;height:4px;
+  background:var(--border);border-radius:2px;outline:none;cursor:pointer
+}
+.rad-wrap input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;
+  background:var(--green);border-radius:50%;cursor:pointer;
+  box-shadow:0 1px 4px rgba(22,163,74,.4)
+}
+.rad-val{font-weight:700;color:var(--green);min-width:38px;font-size:12px}
+.timer{
+  font-size:11px;color:var(--muted);background:var(--bg);
+  padding:4px 10px;border-radius:10px;border:1px solid var(--border);white-space:nowrap
+}
+
+/* ══ MAIN ══════════════════════════════════════════════════════ */
+.main{display:flex;flex:1;overflow:hidden;min-height:0}
+#map{flex:1;position:relative;z-index:1;min-width:0}
+.leaflet-container{height:100%;width:100%}
+.leaflet-popup-content-wrapper{border-radius:12px!important;box-shadow:var(--sh-xl)!important;padding:0!important;overflow:hidden}
+.leaflet-popup-content{margin:0!important}
+.pop{padding:14px 16px;min-width:175px}
+.pop-name{font-weight:700;font-size:14px;margin-bottom:2px}
+.pop-addr{color:var(--muted);font-size:12px;margin-bottom:10px}
+.pop-row{display:flex;align-items:baseline;gap:4px}
+.pop-p{font-size:28px;font-weight:900;color:var(--green-d)}
+.pop-u{font-size:13px;font-weight:500;color:var(--muted)}
+.pop-t{font-size:11px;color:var(--muted);margin-top:5px}
+
+/* ══ SIDEBAR ═══════════════════════════════════════════════════ */
+.side{
+  width:375px;flex-shrink:0;background:var(--bg);
+  border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden
+}
+.side-stats{
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;
+  background:var(--border);flex-shrink:0
+}
+.stat{background:var(--surface);padding:10px 12px;text-align:center}
+.stat-v{font-size:17px;font-weight:800;color:var(--green-d)}
+.stat-l{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:1px}
+.side-head{
+  padding:12px 16px 10px;border-bottom:1px solid var(--border);
+  background:var(--surface);display:flex;align-items:baseline;justify-content:space-between;flex-shrink:0
+}
+.side-title{font-size:15px;font-weight:700}
+.side-meta{font-size:12px;color:var(--muted)}
+.side-scroll{overflow-y:auto;flex:1;padding:8px}
+.side-scroll::-webkit-scrollbar{width:4px}
+.side-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.slist{display:flex;flex-direction:column;gap:6px}
+
+/* ══ CARD ══════════════════════════════════════════════════════ */
+.card{
+  background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);
+  padding:12px 14px;cursor:pointer;transition:border-color .15s,box-shadow .15s;
+  display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto auto;
+  column-gap:10px;row-gap:1px;position:relative;overflow:hidden
+}
+.card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border);transition:background .15s}
+.card:hover{border-color:#94a3b8;box-shadow:var(--sh-md)}
+.card.sel{border-color:var(--green);box-shadow:0 0 0 3px rgba(22,163,74,.1),var(--sh-md)}
+.card.sel::before,.card.r1::before{background:var(--green)}
+.card.r2::before{background:#7c3aed}
+.card.r3::before{background:var(--amber)}
+.c-rank{
+  grid-column:1;grid-row:1;font-size:11px;font-weight:700;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:5px;margin-bottom:2px
+}
+.badge{padding:1px 7px;border-radius:6px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.badge.g{background:var(--green);color:#fff}
+.badge.p{background:#7c3aed;color:#fff}
+.c-price{grid-column:2;grid-row:1/4;align-self:center;text-align:right}
+.pnum{font-size:30px;font-weight:900;letter-spacing:-1px;line-height:1;color:var(--green-d)}
+.pnum.mid{color:#b45309}
+.pnum.exp{color:var(--red)}
+.punit{font-size:11px;color:var(--muted);margin-top:1px}
+.c-name{grid-column:1;grid-row:2;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c-addr{grid-column:1;grid-row:3;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c-meta{
+  grid-column:1/3;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);
+  display:flex;gap:10px;font-size:11px;color:var(--muted);font-weight:500
+}
+
+/* ══ STATE PANEL ═══════════════════════════════════════════════ */
+.state{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;padding:28px 20px;text-align:center;flex:1}
+.state-ico{font-size:52px;line-height:1;margin-bottom:4px}
+.state-ttl{font-size:17px;font-weight:700}
+.state-sub{font-size:13px;color:var(--muted);max-width:260px;line-height:1.6}
+.btn-p{
+  background:linear-gradient(135deg,var(--green),var(--green-d));color:#fff;border:none;
+  padding:10px 22px;border-radius:10px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;
+  box-shadow:0 2px 8px rgba(22,163,74,.35);transition:transform .1s,box-shadow .15s;margin-top:4px
+}
+.btn-p:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(22,163,74,.4)}
+.btn-p:active{transform:scale(.98)}
+
+/* ══ ERROR BAR ═════════════════════════════════════════════════ */
+.err-bar{
+  background:#fff1f2;border-bottom:1px solid #fecdd3;color:#9f1239;
+  padding:8px 16px;font-size:12px;display:none;align-items:center;gap:8px;flex-shrink:0
+}
+.err-bar.on{display:flex}
+.err-x{margin-left:auto;background:none;border:none;color:#9f1239;font-size:16px;cursor:pointer;line-height:1}
+
+/* ══ SETUP SCREEN (overlay inside map area) ════════════════════ */
+.setup-overlay{
+  position:absolute;inset:0;background:rgba(15,23,42,.55);
+  backdrop-filter:blur(6px);z-index:50;
+  display:none;align-items:center;justify-content:center;padding:24px
+}
+.setup-overlay.on{display:flex}
+.setup-card{
+  background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--sh-xl);
+  width:100%;max-width:460px;overflow:hidden
+}
+.setup-hero{
+  background:linear-gradient(135deg,var(--navy),var(--navy-m));
+  padding:24px 26px 20px;color:#fff
+}
+.setup-hero h2{font-size:20px;font-weight:800;margin-bottom:6px}
+.setup-hero p{font-size:13px;color:rgba(255,255,255,.65);line-height:1.6}
+.setup-body{padding:20px 26px 24px;display:flex;flex-direction:column;gap:14px}
+.step{
+  display:flex;gap:12px;align-items:flex-start;
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px
+}
+.step-n{
+  width:24px;height:24px;border-radius:50%;background:var(--green);color:#fff;
+  font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0
+}
+.step-txt{font-size:13px;line-height:1.55}
+.step-txt strong{display:block;font-weight:700;margin-bottom:2px}
+.step-txt a{color:var(--green);font-weight:600;text-decoration:none}
+.step-txt a:hover{text-decoration:underline}
+code{
+  font-family:'SF Mono','Fira Code',monospace;display:block;
+  background:var(--navy);color:#a5f3b0;padding:7px 10px;
+  border-radius:6px;font-size:12px;margin-top:6px;word-break:break-all
+}
+.inp-row{display:flex;gap:8px;margin-top:2px}
+.inp-row input{
+  flex:1;border:1.5px solid var(--border);border-radius:var(--r-sm);
+  padding:8px 12px;font-size:13px;font-family:inherit;outline:none;
+  transition:border-color .15s
+}
+.inp-row input:focus{border-color:var(--green)}
+.inp-row input::placeholder{color:var(--muted)}
+.btn-save{
+  background:var(--green);color:#fff;border:none;border-radius:var(--r-sm);
+  padding:8px 16px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;
+  white-space:nowrap;transition:background .15s
+}
+.btn-save:hover{background:var(--green-d)}
+.setup-footer{display:flex;justify-content:flex-end;gap:8px;padding-top:4px}
+.btn-skip{
+  background:transparent;border:1.5px solid var(--border);color:var(--slate);
+  padding:8px 18px;border-radius:var(--r-sm);font-size:13px;font-weight:600;
+  font-family:inherit;cursor:pointer;transition:background .15s
+}
+.btn-skip:hover{background:var(--border)}
+
+/* ══ SKELETON ══════════════════════════════════════════════════ */
+.skel{background:linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%);
+  background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:5px}
+@keyframes shimmer{to{background-position:-200% 0}}
+.skel-card{background:var(--surface);border:1.5px solid var(--border);
+  border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:7px}
+
+/* ══ ANIMATIONS ════════════════════════════════════════════════ */
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.spin{display:inline-block;animation:spin .8s linear infinite}
+.fade{animation:fadeIn .22s ease}
+
+/* ══ RESPONSIVE ════════════════════════════════════════════════ */
+@media(max-width:768px){
+  .hdr-pill{display:none}
+  .main{flex-direction:column}
+  #map{flex:0 0 44vh;position:relative}
+  .side{width:100%;flex:1;border-left:none;border-top:1px solid var(--border)}
+}
+@media(max-width:480px){
+  .hdr{padding:0 14px}
+  .hdr-title{font-size:15px}
+  .ctrl{padding:8px 12px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <header class="hdr">
+    <div class="hdr-logo">⛽</div>
+    <div class="hdr-brand">
+      <div class="hdr-title">NZ Petrol Finder</div>
+      <div class="hdr-sub">Live prices · Powered by Gaspy</div>
+    </div>
+    <div class="hdr-space"></div>
+    <div class="hdr-pill">
+      <div class="dot" id="dot"></div>
+      <span id="statusTxt">Starting…</span>
+    </div>
+    <button class="btn-refresh" id="btnRefresh" disabled>
+      <span id="refreshIco">↻</span> Refresh
+    </button>
+  </header>
+
+  <!-- ERROR BAR -->
+  <div class="err-bar" id="errBar">
+    <span id="errTxt"></span>
+    <button class="err-x" id="errX">×</button>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="ctrl">
+    <div class="fuel-tabs" id="fuelTabs"></div>
+    <div class="ctrl-r">
+      <div class="rad-wrap">
+        Radius:
+        <input type="range" id="radSlider" min="1" max="20" value="5"/>
+        <span class="rad-val" id="radVal">5 km</span>
+      </div>
+      <div class="timer" id="timer" style="display:none">
+        Next refresh <strong id="countdown">5:00</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- MAP -->
+    <div id="map" style="position:relative">
+      <!-- placeholder shown before map loads -->
+      <div class="state" id="mapHolder" style="height:100%">
+        <div class="state-ico">📍</div>
+        <div class="state-ttl" id="mhTitle">Finding your location…</div>
+        <div class="state-sub" id="mhSub">Allow location access when your browser asks.</div>
+        <button class="btn-p" id="btnLoc" style="display:none" onclick="getLocation()">Allow Location</button>
+      </div>
+
+      <!-- setup overlay -->
+      <div class="setup-overlay" id="setupOverlay">
+        <div class="setup-card">
+          <div class="setup-hero">
+            <h2>🔧 One-time setup needed</h2>
+            <p>The Gaspy API requires a small cloud proxy. Set one up free in 2 minutes using Cloudflare Workers — no Node.js, no server required.</p>
+          </div>
+          <div class="setup-body">
+            <div class="step">
+              <div class="step-n">1</div>
+              <div class="step-txt">
+                <strong>Create a free Cloudflare account</strong>
+                Sign up at <a href="https://cloudflare.com" target="_blank">cloudflare.com</a> (free tier is plenty).
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-n">2</div>
+              <div class="step-txt">
+                <strong>Create a Worker and paste the code</strong>
+                Go to <b>Workers &amp; Pages → Create → Hello World</b>, then replace all the code with the contents of <a href="worker.js" target="_blank">worker.js</a> and click <b>Deploy</b>.
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-n">3</div>
+              <div class="step-txt">
+                <strong>Paste your Worker URL below</strong>
+                It looks like <code style="display:inline;padding:2px 6px">https://your-worker.workers.dev</code>
+                <div class="inp-row">
+                  <input type="url" id="workerInput" placeholder="https://petrol-proxy.your-name.workers.dev"/>
+                  <button class="btn-save" id="btnSave">Save &amp; Go</button>
+                </div>
+              </div>
+            </div>
+            <div class="setup-footer">
+              <button class="btn-skip" id="btnSkip">Skip for now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <aside class="side">
+      <div class="side-stats" id="sideStats" style="display:none">
+        <div class="stat"><div class="stat-v" id="stMin">–</div><div class="stat-l">Cheapest</div></div>
+        <div class="stat"><div class="stat-v" id="stAvg">–</div><div class="stat-l">Average</div></div>
+        <div class="stat"><div class="stat-v" id="stCnt">–</div><div class="stat-l">Stations</div></div>
+      </div>
+      <div class="side-head">
+        <div class="side-title" id="sideTitle">Stations</div>
+        <div class="side-meta" id="sideMeta"></div>
+      </div>
+      <div class="side-scroll" id="sideScroll">
+        <div class="state" id="sideState">
+          <div class="state-ico">📍</div>
+          <div class="state-ttl">Waiting for location…</div>
+          <div class="state-sub">Allow location access to see nearby prices.</div>
+        </div>
+        <div class="slist" id="slist" style="display:none"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ══ CONFIG ═══════════════════════════════════════════════════════════════════
+   Your Cloudflare Worker URL goes here.
+   You can also set it at runtime via the setup screen — it's saved to localStorage.
+   Leave empty to attempt a direct browser call first.
+═════════════════════════════════════════════════════════════════════════════ */
+const DEFAULT_WORKER_URL = '';   // e.g. 'https://petrol-proxy.you.workers.dev'
+const GASPY_DIRECT       = 'https://gaspy.nz/api/v1';
+const REFRESH_SECS       = 300;
+
+/* ══ FUEL TYPES ════════════════════════════════════════════════ */
+const FUELS = [
+  {id:1,label:'91',      name:'91 Unleaded'},
+  {id:2,label:'95',      name:'95 Premium'},
+  {id:5,label:'98',      name:'98 Super'},
+  {id:3,label:'Diesel',  name:'Diesel'},
+  {id:6,label:'P.Diesel',name:'Premium Diesel'},
+  {id:4,label:'LPG',     name:'LPG'},
+];
+
+/* ══ STATE ═════════════════════════════════════════════════════ */
+let S = {
+  loc:null, stations:[], selId:null, fuelId:1, radius:5,
+  loading:false, mode:'idle', countdown:REFRESH_SECS,
+  map:null, markers:{}, userMark:null, circle:null, lastUp:null,
+  workerUrl: localStorage.getItem('workerUrl') || DEFAULT_WORKER_URL,
+};
+
+/* ══ DOM HELPERS ═══════════════════════════════════════════════ */
+const $  = id => document.getElementById(id);
+const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const fmt = p => { if(p==null)return'–'; const n=parseFloat(p); return isNaN(n)?'–':n.toFixed(1); };
+function pcls(p,mn,mx){ const r=(p-mn)/((mx-mn)||1); return r<.33?'':r<.66?'mid':'exp'; }
+function ago(iso){
+  if(!iso)return null;
+  const m=Math.floor((Date.now()-new Date(iso))/6e4);
+  if(m<1)return'just now'; if(m<60)return m+'m ago';
+  const h=Math.floor(m/60); return h<24?h+'h ago':Math.floor(h/24)+'d ago';
+}
+function setStatus(cls,txt){ $('dot').className='dot '+cls; $('statusTxt').textContent=txt; }
+function showErr(html){ $('errTxt').innerHTML=html; $('errBar').classList.add('on'); }
+function hideErr(){ $('errBar').classList.remove('on'); }
+
+/* ══ MAP ═══════════════════════════════════════════════════════ */
+function initMap(lat,lng){
+  if(S.map)return;
+  $('mapHolder').style.display='none';
+  S.map = L.map('map',{zoomControl:true}).setView([lat,lng],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19
+  }).addTo(S.map);
+  S.userMark = L.marker([lat,lng],{icon:L.divIcon({
+    className:'',iconSize:[16,16],iconAnchor:[8,8],
+    html:`<div style="width:16px;height:16px;background:#3b82f6;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 5px rgba(59,130,246,.25)"></div>`
+  }),zIndexOffset:1000}).addTo(S.map).bindPopup('<div class="pop"><div class="pop-name">📍 You are here</div></div>');
+  S.circle = L.circle([lat,lng],{radius:S.radius*1e3,color:'#16a34a',fillColor:'#16a34a',
+    fillOpacity:.04,weight:1.5,dashArray:'6 4'}).addTo(S.map);
+}
+
+function mkIcon(pc,sel){
+  const c=sel?'#7c3aed':{'':`#16a34a`,'mid':'#f59e0b','exp':'#ef4444'}[pc]||'#16a34a';
+  const s=sel?34:30;
+  return L.divIcon({className:'',iconSize:[s,s],iconAnchor:[s/2,s],popupAnchor:[0,-s],
+    html:`<div style="width:${s}px;height:${s}px;background:${c};border:2.5px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 8px rgba(0,0,0,.3)"></div>`});
+}
+
+function drawMarkers(){
+  if(!S.map)return;
+  Object.values(S.markers).forEach(m=>m.remove());
+  S.markers={};
+  const ps=S.stations.map(s=>s.price).filter(p=>p!=null);
+  const mn=Math.min(...ps),mx=Math.max(...ps);
+  S.stations.forEach(s=>{
+    if(!s.lat||!s.lng)return;
+    const pc=pcls(s.price,mn,mx),sel=s.id===S.selId;
+    const m=L.marker([s.lat,s.lng],{icon:mkIcon(pc,sel),zIndexOffset:sel?500:0})
+      .addTo(S.map)
+      .bindPopup(()=>{
+        const d=document.createElement('div');d.className='pop fade';
+        d.innerHTML=`<div class="pop-name">${esc(s.name)}</div>${s.address?`<div class="pop-addr">${esc(s.address)}</div>`:''}<div class="pop-row"><span class="pop-p">${fmt(s.price)}</span><span class="pop-u">c/L</span></div>${s.lastUpdated?`<div class="pop-t">Updated ${ago(s.lastUpdated)}</div>`:''}`;
+        return d;
+      });
+    m.on('click',()=>pick(s.id));
+    S.markers[s.id]=m;
+  });
+}
+
+/* ══ STATION LIST ══════════════════════════════════════════════ */
+function render(){
+  const list=$('slist'),panel=$('sideState');
+  const{stations,selId,loading,mode}=S;
+
+  if(loading&&stations.length===0){
+    panel.style.display='none';list.style.display='';
+    list.innerHTML=Array(5).fill(`<div class="skel-card"><div class="skel" style="width:60px;height:11px"></div><div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0"><div><div class="skel" style="width:130px;height:16px;margin-bottom:5px"></div><div class="skel" style="width:160px;height:12px"></div></div><div class="skel" style="width:52px;height:32px;border-radius:8px"></div></div><div class="skel" style="height:1px;margin-top:8px"></div><div style="display:flex;gap:10px;margin-top:6px"><div class="skel" style="width:55px;height:11px"></div><div class="skel" style="width:60px;height:11px"></div></div></div>`).join('');
+    return;
+  }
+  if(!loading&&stations.length===0&&mode==='live'){
+    list.style.display='none';panel.style.display='';
+    panel.innerHTML=`<div class="state-ico">🔍</div><div class="state-ttl">No stations found</div><div class="state-sub">Try increasing the radius or a different fuel type.</div>`;
+    return;
+  }
+  if(stations.length===0)return;
+
+  panel.style.display='none';list.style.display='';
+  const ps=stations.map(s=>s.price).filter(p=>p!=null);
+  const mn=Math.min(...ps),mx=Math.max(...ps);
+  const avg=ps.reduce((a,b)=>a+b,0)/(ps.length||1);
+
+  $('sideStats').style.display='';
+  $('stMin').textContent=fmt(mn)+'c';
+  $('stAvg').textContent=fmt(avg)+'c';
+  $('stCnt').textContent=stations.length;
+  $('sideTitle').textContent=(FUELS.find(f=>f.id===S.fuelId)?.name||'Fuel')+' Prices';
+  $('sideMeta').textContent=S.lastUp?'Updated '+S.lastUp.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+
+  list.innerHTML='';
+  stations.forEach((s,i)=>{
+    const pc=pcls(s.price,mn,mx),sel=s.id===selId;
+    const d=document.createElement('div');
+    d.className=`card fade${sel?' sel':''} r${i+1}`;
+    d.innerHTML=`
+      <div class="c-rank">#${i+1}
+        ${i===0?'<span class="badge g">Cheapest</span>':''}
+        ${i===1?'<span class="badge p">2nd</span>':''}
+      </div>
+      <div class="c-price"><div class="pnum ${pc}">${fmt(s.price)}</div><div class="punit">cents/litre</div></div>
+      <div class="c-name">${esc(s.name||'Station')}</div>
+      <div class="c-addr">${esc(s.address||s.brand||'')}</div>
+      <div class="c-meta">
+        ${s.distance!=null?`<span>📍 ${s.distance.toFixed(1)} km</span>`:''}
+        ${s.lastUpdated?`<span>🕐 ${ago(s.lastUpdated)}</span>`:''}
+        ${s.brand&&s.brand!==s.name?`<span>${esc(s.brand)}</span>`:''}
+      </div>`;
+    d.addEventListener('click',()=>pick(s.id));
+    list.appendChild(d);
+  });
+}
+
+function pick(id){
+  S.selId=id;
+  const s=S.stations.find(x=>x.id===id);
+  if(s&&S.map){
+    S.map.setView([s.lat,s.lng],Math.max(S.map.getZoom(),14));
+    if(S.markers[id])S.markers[id].openPopup();
+  }
+  render(); drawMarkers();
+  setTimeout(()=>{
+    const cards=document.querySelectorAll('.card');
+    const i=S.stations.findIndex(x=>x.id===id);
+    if(cards[i])cards[i].scrollIntoView({behavior:'smooth',block:'nearest'});
+  },50);
+}
+
+/* ══ API ═══════════════════════════════════════════════════════ */
+function decodeBlob(raw){
+  if(typeof raw!=='string')return raw;
+  for(const p of[...raw.split(':'),raw.replace(':','')]){
+    try{return JSON.parse(atob(p))}catch{}
+  }
+  return raw;
+}
+function normalise(decoded){
+  const d=typeof decoded==='string'?decodeBlob(decoded):decoded;
+  const list=d?.data||d?.stations||d||[];
+  return(Array.isArray(list)?list:[])
+    .map(s=>({
+      id:s.id||s.station_id||crypto.randomUUID?.()??Math.random(),
+      name:s.name||s.station_name||'Station',
+      brand:s.brand||s.operator||'',
+      address:s.address||'',
+      lat:parseFloat(s.latitude||s.lat),
+      lng:parseFloat(s.longitude||s.lng),
+      price:parseFloat(s.price||s.fuel_price)||null,
+      lastUpdated:s.last_updated||s.updated_at||null,
+      distance:s.distance!=null?parseFloat(s.distance):null,
+    }))
+    .filter(s=>s.price!=null)
+    .sort((a,b)=>a.price-b.price);
+}
+
+async function callWorker(lat,lng,fuelId,radius){
+  const r=await fetch(S.workerUrl+'/stations',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({lat,lng,distance:radius,fuelTypeId:fuelId}),signal:AbortSignal.timeout(12000)
+  });
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||`Worker error ${r.status}`);}
+  const j=await r.json();
+  return normalise(j.stations??j);
+}
+
+async function callDirect(lat,lng,fuelId,radius){
+  // Attempt direct browser call – works if Gaspy's CORS allows it from this origin
+  const init=await fetch(`${GASPY_DIRECT}/Public/init?gold_key=&v=10`,{
+    credentials:'include',headers:{Accept:'application/json'},signal:AbortSignal.timeout(8000)
+  });
+  if(!init.ok)throw new Error(`Init failed ${init.status}`);
+  // XSRF token is set as a cookie on the gaspy.nz domain – try to read it
+  const xsrf=document.cookie.split(';').map(c=>c.trim())
+    .find(c=>c.startsWith('XSRF-TOKEN='))?.split('=').slice(1).join('=')||'';
+  const r=await fetch(`${GASPY_DIRECT}/FuelPrice/searchFuelPricesV2`,{
+    method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json',Accept:'application/json',
+      ...(xsrf?{'X-XSRF-TOKEN':decodeURIComponent(xsrf)}:{})},
+    body:JSON.stringify({latitude:lat,longitude:lng,distance:radius,order_by:'price',
+      fuel_type_id:fuelId,ev_plug_types:[],device_type:'A',v:10}),
+    signal:AbortSignal.timeout(10000)
+  });
+  if(!r.ok)throw new Error(`Gaspy ${r.status}`);
+  return normalise(await r.json());
+}
+
+async function load(){
+  if(!S.loc||S.loading)return;
+  S.loading=true; hideErr();
+  setStatus('spin-dot','Loading…');
+  $('btnRefresh').disabled=true;
+  $('refreshIco').className='spin';
+  render();
+
+  const{lat,lng}=S.loc;
+  try{
+    let stations;
+    if(S.workerUrl){
+      try{ stations=await callWorker(lat,lng,S.fuelId,S.radius); }
+      catch(e){ console.warn('[worker]',e.message); stations=await callDirect(lat,lng,S.fuelId,S.radius); }
+    } else {
+      try{ stations=await callDirect(lat,lng,S.fuelId,S.radius); }
+      catch(e){
+        console.warn('[direct]',e.message);
+        S.loading=false;
+        setStatus('err','Setup needed');
+        $('setupOverlay').classList.add('on');
+        render(); return;
+      }
+    }
+    commit(stations);
+  }catch(e){
+    S.loading=false; S.mode='error';
+    setStatus('err','Error');
+    showErr(`${esc(e.message)} — <button onclick="$('setupOverlay').classList.add('on')" style="background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer">Set up proxy</button>`);
+    render();
+  }finally{
+    S.loading=false;
+    $('btnRefresh').disabled=false;
+    $('refreshIco').className='';
+  }
+}
+
+function commit(stations){
+  S.stations=stations; S.mode='live';
+  S.lastUp=new Date(); S.countdown=REFRESH_SECS; S.loading=false;
+  setStatus('live',`${stations.length} stations · ${S.lastUp.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`);
+  $('timer').style.display='';
+  render(); drawMarkers();
+}
+
+/* ══ GEOLOCATION ═══════════════════════════════════════════════ */
+function getLocation(){
+  setStatus('spin-dot','Getting location…');
+  $('mhTitle').textContent='Finding your location…';
+  $('mhSub').textContent='Please allow location access when prompted.';
+  $('btnLoc').style.display='none';
+  if(!navigator.geolocation){locErr('Geolocation not supported.');return;}
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      S.loc={lat:pos.coords.latitude,lng:pos.coords.longitude};
+      initMap(S.loc.lat,S.loc.lng);
+      $('sideState').innerHTML=`<div class="state-ico"><span class="spin">⟳</span></div><div class="state-ttl">Loading prices…</div>`;
+      load();
+    },
+    e=>locErr(e.message),
+    {enableHighAccuracy:true,timeout:12000,maximumAge:6e4}
+  );
+}
+function locErr(msg){
+  $('mhTitle').textContent='Location Access Needed';
+  $('mhSub').textContent=msg;
+  $('btnLoc').style.display='';
+  setStatus('err','No location');
+}
+
+/* ══ FUEL TABS ═════════════════════════════════════════════════ */
+function buildTabs(){
+  const wrap=$('fuelTabs');
+  FUELS.forEach(f=>{
+    const b=document.createElement('button');
+    b.className='ftab'+(f.id===S.fuelId?' on':'');
+    b.textContent=f.label;
+    b.onclick=()=>{
+      if(f.id===S.fuelId)return;
+      S.fuelId=f.id;
+      document.querySelectorAll('.ftab').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on'); load();
+    };
+    wrap.appendChild(b);
+  });
+}
+
+/* ══ RADIUS SLIDER ═════════════════════════════════════════════ */
+let radTmr;
+$('radSlider').oninput=e=>{
+  S.radius=+e.target.value; $('radVal').textContent=S.radius+' km';
+  if(S.circle)S.circle.setRadius(S.radius*1e3);
+  clearTimeout(radTmr); radTmr=setTimeout(load,700);
+};
+
+/* ══ AUTO-REFRESH ══════════════════════════════════════════════ */
+setInterval(()=>{
+  if(S.mode!=='live')return;
+  S.countdown--;
+  const m=Math.floor(S.countdown/60),s=S.countdown%60;
+  $('countdown').textContent=`${m}:${String(s).padStart(2,'0')}`;
+  if(S.countdown<=0)load();
+},1000);
+
+/* ══ SETUP SCREEN ══════════════════════════════════════════════ */
+$('btnSave').onclick=()=>{
+  const url=$('workerInput').value.trim().replace(/\/+$/,'');
+  if(!url){$('workerInput').focus();return;}
+  S.workerUrl=url; localStorage.setItem('workerUrl',url);
+  $('setupOverlay').classList.remove('on');
+  load();
+};
+$('btnSkip').onclick=()=>$('setupOverlay').classList.remove('on');
+// Pre-fill saved URL
+if(S.workerUrl) $('workerInput').value=S.workerUrl;
+
+/* ══ MISC WIRING ═══════════════════════════════════════════════ */
+$('btnRefresh').onclick=load;
+$('errX').onclick=hideErr;
+
+/* ══ BOOT ══════════════════════════════════════════════════════ */
+buildTabs();
+getLocation();
+</script>
+</body>
+</html>
